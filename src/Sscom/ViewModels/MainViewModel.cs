@@ -95,11 +95,12 @@ public partial class MainViewModel : ObservableObject
     public double HexColumnWidth => DisplayMode == 2 ? 0 : 430;
     public double AsciiColumnWidth => DisplayMode == 1 ? 0 : 190;
 
-    public MainViewModel(ISerialConnection serial, Dispatcher dispatcher)
+    public MainViewModel(ISerialConnection serial, Dispatcher dispatcher, string? quickSendPath = null)
     {
         _serial = serial;
         _dispatcher = dispatcher;
         RefreshPorts();
+        InitializeSendFeatures(quickSendPath ?? QuickSendStore.DefaultPath);
     }
 
     partial void OnSelectedPortChanged(string? value) => TogglePortCommand.NotifyCanExecuteChanged();
@@ -109,7 +110,12 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(HexColumnWidth));
         OnPropertyChanged(nameof(AsciiColumnWidth));
     }
-    partial void OnIsOpenChanged(bool value) => NotifyState();
+    partial void OnIsOpenChanged(bool value)
+    {
+        // Every way the port closes (button, unplug, write failure, shutdown) ends here.
+        if (!value) StopTimedSending("串口已关闭");
+        NotifyState();
+    }
     partial void OnIsBusyChanged(bool value) => NotifyState();
     private void NotifyState()
     {
@@ -118,6 +124,7 @@ public partial class MainViewModel : ObservableObject
         TogglePortCommand.NotifyCanExecuteChanged();
         RefreshPortsCommand.NotifyCanExecuteChanged();
         SendCommand.NotifyCanExecuteChanged();
+        NotifySendFeatureState();
     }
 
     [RelayCommand(CanExecute = nameof(CanRefresh))]
@@ -207,22 +214,29 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand(CanExecute = nameof(CanSend))]
-    private async Task SendAsync()
+    private Task SendAsync() => SendThroughPortAsync(SendText, SendMode, SendSource.Manual);
+
+    // The single send path shared by manual, timed and quick-group sends.
+    private async Task<bool> SendCoreAsync(string text, int mode, SendSource source)
     {
+        if (!IsOpen || IsBusy || _shuttingDown) return false;
         byte[] bytes;
-        try { bytes = ParseSendBytes(SendText, SendMode); }
-        catch (Exception ex) { Status = $"发送内容无效：{ex.Message}"; return; }
+        try { bytes = ParseSendBytes(text, mode); }
+        catch (Exception ex) { Status = $"发送内容无效：{ex.Message}"; return false; }
         IsBusy = true;
         try
         {
             await _serial.WriteAsync(bytes);
             SentBytes += bytes.Length;
+            RecordSend(source, text, mode, bytes.Length);
             Status = $"已向串口写入 {bytes.Length} 字节。";
+            return true;
         }
         catch (Exception ex)
         {
             await CloseAfterErrorAsync();
             Status = $"发送失败：{Explain(ex)} 本次可能部分写入，发送计数仅含完整成功的写入。";
+            return false;
         }
         finally { IsBusy = false; }
     }
@@ -252,9 +266,11 @@ public partial class MainViewModel : ObservableObject
     public async Task ShutdownAsync()
     {
         _shuttingDown = true;
+        StopTimedSending("程序退出");
         NotifyState();
         if (TogglePortCommand.ExecutionTask is { } toggle) await toggle;
         if (SendCommand.ExecutionTask is { } send) await send;
+        await _sendTask;
         await CloseAfterErrorAsync();
     }
 

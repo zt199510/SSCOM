@@ -1,7 +1,7 @@
 <Window x:Class="Sscom.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Sscom · 串口调试助手" Width="1060" Height="740" MinWidth="960" MinHeight="600"
+        Title="Sscom · 串口调试助手" Width="1300" Height="760" MinWidth="1180" MinHeight="640"
         FontFamily="Microsoft YaHei UI" FontSize="13" Background="#F5F7FA"
         Closing="Window_Closing">
     <Grid Margin="20">
@@ -10,11 +10,12 @@
             <RowDefinition Height="Auto"/><RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <DockPanel Margin="0,0,0,16">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="360"/></Grid.ColumnDefinitions>
+        <DockPanel Grid.ColumnSpan="2" Margin="0,0,0,16">
             <TextBlock Text="SSCOM" FontSize="24" FontWeight="SemiBold" Foreground="#17324D"/>
             <TextBlock Text="本地串口调试 · HEX / ASCII" Foreground="#526479" VerticalAlignment="Bottom" Margin="16,0,0,3"/>
         </DockPanel>
-        <Border Grid.Row="1" Background="White" BorderBrush="#DCE2EA" BorderThickness="1" Padding="14" CornerRadius="6">
+        <Border Grid.Row="1" Grid.ColumnSpan="2" Background="White" BorderBrush="#DCE2EA" BorderThickness="1" Padding="14" CornerRadius="6">
             <StackPanel>
                 <DockPanel LastChildFill="False">
                     <StackPanel Orientation="Horizontal" IsEnabled="{Binding CanConfigure}">
@@ -70,9 +71,107 @@
                     <Button DockPanel.Dock="Right" Content="发送" Command="{Binding SendCommand}"/>
                     <TextBox AutomationProperties.Name="发送内容" Text="{Binding SendText, UpdateSourceTrigger=PropertyChanged}" FontFamily="Consolas" FontSize="14" Padding="7,5" VerticalContentAlignment="Center"/>
                 </DockPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <TextBlock Text="定时间隔" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBox AutomationProperties.Name="定时间隔毫秒" Width="90" Padding="5,4" VerticalContentAlignment="Center"
+                             Text="{Binding TimedIntervalText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditTimedInterval}"/>
+                    <TextBlock Text="ms" VerticalAlignment="Center" Margin="6,0,10,0"/>
+                    <Button Content="开始定时发送" Command="{Binding StartTimedSendCommand}"/>
+                    <Button Content="停止定时发送" Command="{Binding StopTimedSendCommand}"/>
+                    <TextBlock Text="{Binding TimedSendStateText}" VerticalAlignment="Center" Margin="10,0,0,0" AutomationProperties.LiveSetting="Polite">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="#526479"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsTimedSending}" Value="True">
+                                        <Setter Property="Foreground" Value="#1769AA"/>
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
             </StackPanel>
         </Border>
-        <Grid Grid.Row="5" Margin="0,12,0,0">
+        <TabControl x:Name="SidePanel" Grid.Row="2" Grid.RowSpan="3" Grid.Column="1" Margin="12,16,0,0" Background="White" BorderBrush="#DCE2EA">
+            <TabItem Header="快捷发送">
+                <DockPanel Margin="8">
+                    <DockPanel DockPanel.Dock="Top">
+                        <Button DockPanel.Dock="Right" Content="删除分组" Click="DeleteGroup_Click" Margin="4,0,0,0"/>
+                        <Button DockPanel.Dock="Right" Content="新建分组" Command="{Binding AddQuickSendGroupCommand}"/>
+                        <ComboBox AutomationProperties.Name="快捷发送分组" ItemsSource="{Binding QuickSendGroups}" SelectedItem="{Binding SelectedQuickSendGroup}" DisplayMemberPath="Name"/>
+                    </DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0">
+                        <TextBlock Text="分组名称" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBox AutomationProperties.Name="分组名称" Padding="5,4" Text="{Binding SelectedQuickSendGroup.Name, UpdateSourceTrigger=PropertyChanged}"/>
+                    </DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,8,0,8">
+                        <Button Content="添加条目" Command="{Binding AddQuickSendEntryCommand}" Margin="0,0,4,0" ToolTip="以当前发送框内容和格式新建条目"/>
+                        <Button Content="导入…" Click="Import_Click"/>
+                        <Button Content="导出…" Click="Export_Click"/>
+                    </StackPanel>
+                    <TextBlock DockPanel.Dock="Bottom" Text="点击“发送”立即通过当前串口发送该条目；修改自动保存。" Foreground="#526479" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                    <DataGrid x:Name="QuickSendGrid" ItemsSource="{Binding SelectedQuickSendGroup.Entries}" AutoGenerateColumns="False"
+                              CanUserAddRows="False" CanUserDeleteRows="False" CanUserSortColumns="False" CanUserReorderColumns="False"
+                              HeadersVisibility="Column" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#E6EBF1"
+                              BorderBrush="#DCE2EA" Background="White" RowHeaderWidth="0" SelectionMode="Single">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="名称" Width="80" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
+                            <DataGridTemplateColumn Header="HEX" Width="40">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsHex, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center" AutomationProperties.Name="HEX 格式"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="发送内容" Width="*" Binding="{Binding Content, UpdateSourceTrigger=PropertyChanged}" FontFamily="Consolas"/>
+                            <DataGridTemplateColumn Width="Auto">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button Content="发送" Padding="8,2" MinHeight="26" Margin="2"
+                                                    Command="{Binding DataContext.QuickSendCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" CommandParameter="{Binding}"/>
+                                            <Button Content="删除" Padding="8,2" MinHeight="26" Margin="2"
+                                                    Command="{Binding DataContext.DeleteQuickSendEntryCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" CommandParameter="{Binding}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+            <TabItem Header="发送历史">
+                <DockPanel Margin="8">
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                        <Button DockPanel.Dock="Right" Content="清空历史" Command="{Binding ClearHistoryCommand}" Margin="0"/>
+                        <TextBlock Text="点击条目只填入发送框，不会发送。" Foreground="#526479" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    </DockPanel>
+                    <ListBox x:Name="HistoryList" ItemsSource="{Binding SendHistory}" BorderBrush="#DCE2EA" HorizontalContentAlignment="Stretch"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Button Command="{Binding DataContext.FillFromHistoryCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}"
+                                        HorizontalContentAlignment="Stretch" Margin="0" Padding="4,3" Cursor="Hand" ToolTip="填入发送框（不发送）">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Summary}" Foreground="#526479" FontSize="12"/>
+                                        <TextBlock Text="{Binding Content}" FontFamily="Consolas" TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </TabItem>
+        </TabControl>
+        <Grid Grid.Row="5" Grid.ColumnSpan="2" Margin="0,12,0,0">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Foreground="#334B63" Margin="0,0,16,0" AutomationProperties.LiveSetting="Polite"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal">
